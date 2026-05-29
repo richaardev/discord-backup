@@ -41,7 +41,6 @@ The bot uses Discord's Slash Commands (`/`) for easy interaction. The main comma
    ```env
    DISCORD_TOKEN=your_bot_token_here
    DATABASE_PATH=./data/backups.db
-   GUILD_ID=your_server_id_here_optional
    ```
 
 3. **Install dependencies:**

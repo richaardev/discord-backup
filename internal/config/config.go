@@ -9,7 +9,6 @@ import (
 type Config struct {
 	Token        string `env:"DISCORD_TOKEN,required"`
 	DatabasePath string `env:"DATABASE_PATH" envDefault:"./data/backups.db"`
-	GuildID      string `env:"GUILD_ID,required"`
 }
 
 func Must() Config {
