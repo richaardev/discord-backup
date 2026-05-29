@@ -21,6 +21,7 @@ func SlashBackup(q *sqlc.Queries, db *sql.DB) *concord.SlashCommand {
 	return &concord.SlashCommand{
 		Name:        "backup",
 		Description: "Manage Discord server backups",
+		Contexts:    []discord.InteractionContextType{discord.InteractionContextTypeGuild},
 		SubCommands: []concord.SubCommand{
 			{
 				Name:        "create",
@@ -92,14 +93,60 @@ func handleCreate(q *sqlc.Queries) func(event *events.ApplicationCommandInteract
 
 		backupID := fmt.Sprintf("backup_%s", time.Now().Format("20060102_150405"))
 		userID := event.User().ID.String()
-		view := backup.NewCreatePanel(backupID, guildID, userID, event.Client().Rest, q)
-		panel := interactivity.NewPanel(
-			event.Client(), view,
-			interactivity.WithOptions(interactivity.PanelOptions{
-				IdleTime: 5 * time.Minute,
-			}),
-		)
-		return panel.Render(event)
+
+		if err := event.DeferCreateMessage(true); err != nil {
+			return err
+		}
+
+		go func() {
+			data, err := backup.Create(guildID, event.Client().Rest)
+			if err != nil {
+				event.Client().Rest.CreateFollowupMessage(event.ApplicationID(), event.Token(), discord.MessageCreate{
+					Content: fmt.Sprintf("❌ Failed to create backup: %v", err),
+					Flags:   discord.MessageFlagEphemeral,
+				})
+				return
+			}
+
+			raw, err := json.Marshal(data)
+			if err != nil {
+				event.Client().Rest.CreateFollowupMessage(event.ApplicationID(), event.Token(), discord.MessageCreate{
+					Content: fmt.Sprintf("❌ Failed to encode backup: %v", err),
+					Flags:   discord.MessageFlagEphemeral,
+				})
+				return
+			}
+
+			if _, err := q.CreateBackup(context.Background(), sqlc.CreateBackupParams{
+				ID:        backupID,
+				GuildID:   guildID.String(),
+				Data:      string(raw),
+				CreatedBy: userID,
+			}); err != nil {
+				event.Client().Rest.CreateFollowupMessage(event.ApplicationID(), event.Token(), discord.MessageCreate{
+					Content: fmt.Sprintf("❌ Failed to save backup: %v", err),
+					Flags:   discord.MessageFlagEphemeral,
+				})
+				return
+			}
+
+			event.Client().Rest.CreateFollowupMessage(event.ApplicationID(), event.Token(), discord.MessageCreate{
+				Components: []discord.LayoutComponent{
+					discord.NewContainer(
+						discord.NewTextDisplay("### Backup Created!"),
+						discord.NewTextDisplay(fmt.Sprintf("Backup `%s` has been created successfully.", backupID)),
+						discord.NewTextDisplay(strings.Join([]string{
+							fmt.Sprintf("**Roles:** %d", len(data.Roles)),
+							fmt.Sprintf("**Channels:** %d", len(data.Channels)),
+							fmt.Sprintf("**Bans:** %d", len(data.Bans)),
+						}, "\n")),
+					).WithAccentColor(0x57F287),
+				},
+				Flags: discord.MessageFlagIsComponentsV2,
+			})
+		}()
+
+		return nil
 	}
 }
 
