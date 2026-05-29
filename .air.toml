@@ -1,0 +1,21 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "clear && make build"
+bin = "bin/bot"
+
+delay = 100
+stop_on_error = true
+send_interrupt = true
+kill_delay = 500
+
+include_ext = ["go"]
+exclude_dir = ["tmp", "vendor", ".git"]
+exclude_unchanged = true
+
+[log]
+time = true
+
+[misc]
+clean_on_exit = true
