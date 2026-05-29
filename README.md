@@ -1,9 +1,12 @@
+
+
+
 # Discord Backuper
 
 A robust and efficient Discord bot built in Go designed to safely backup and restore your Discord server's structure. This includes roles, channels, and bans, helping you safeguard your server against accidental deletions or malicious actions.
 
 ## 🎥 Demo
-
+[!](https://github.com/user-attachments/assets/17b6f70b-dbdb-4ec4-8e08-0e3eab9a73c0)
 
 ## 🚀 Features & Commands
 
