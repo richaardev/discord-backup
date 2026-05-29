@@ -24,22 +24,24 @@ const (
 )
 
 type CreatePanel struct {
-	state    createState
-	backupID string
-	guildID  snowflake.ID
-	rest     rest.Rest
-	q        *sqlc.Queries
-	data     *BackupData
-	err      error
+	state     createState
+	backupID  string
+	guildID   snowflake.ID
+	createdBy string
+	rest      rest.Rest
+	q         *sqlc.Queries
+	data      *BackupData
+	err       error
 }
 
-func NewCreatePanel(backupID string, guildID snowflake.ID, rest rest.Rest, q *sqlc.Queries) *CreatePanel {
+func NewCreatePanel(backupID string, guildID snowflake.ID, createdBy string, rest rest.Rest, q *sqlc.Queries) *CreatePanel {
 	return &CreatePanel{
-		state:    createStateIdle,
-		backupID: backupID,
-		guildID:  guildID,
-		rest:     rest,
-		q:        q,
+		state:     createStateIdle,
+		backupID:  backupID,
+		guildID:   guildID,
+		createdBy: createdBy,
+		rest:      rest,
+		q:         q,
 	}
 }
 
@@ -76,7 +78,10 @@ func (p *CreatePanel) viewIdle() interactivity.Message {
 
 	return interactivity.Message{
 		Components: &[]discord.LayoutComponent{
-			discord.NewContainer(discord.NewTextDisplay("### 📦 Create Backup"), discord.NewTextDisplay(fmt.Sprintf("Ready to create backup `%s`.", p.backupID))).WithAccentColor(0x5865F2),
+			discord.NewContainer(
+				discord.NewTextDisplay("### 📦 Create Backup"),
+				discord.NewTextDisplay(fmt.Sprintf("Ready to create backup `%s`.", p.backupID)),
+			).WithAccentColor(0x5865F2),
 			discord.NewTextDisplay("⏳ Preparing..."),
 		},
 		Flags: new(discord.MessageFlagIsComponentsV2),
@@ -154,9 +159,10 @@ func (p *CreatePanel) run() {
 	}
 
 	if _, err := p.q.CreateBackup(context.Background(), sqlc.CreateBackupParams{
-		ID:      p.backupID,
-		GuildID: p.guildID.String(),
-		Data:    string(raw),
+		ID:        p.backupID,
+		GuildID:   p.guildID.String(),
+		Data:      string(raw),
+		CreatedBy: p.createdBy,
 	}); err != nil {
 		p.err = fmt.Errorf("failed to save backup: %w", err)
 		p.state = createStateCompleted

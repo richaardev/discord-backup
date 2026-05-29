@@ -10,4 +10,5 @@ type Backup struct {
 	Data      string
 	CreatedAt string
 	UpdatedAt string
+	CreatedBy string
 }

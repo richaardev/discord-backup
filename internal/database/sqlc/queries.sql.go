@@ -11,18 +11,24 @@ import (
 )
 
 const createBackup = `-- name: CreateBackup :execresult
-INSERT INTO backups (id, guild_id, data) VALUES (?, ?, ?)
+INSERT INTO backups (id, guild_id, data, created_by) VALUES (?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = datetime('now')
 `
 
 type CreateBackupParams struct {
-	ID      string
-	GuildID string
-	Data    string
+	ID        string
+	GuildID   string
+	Data      string
+	CreatedBy string
 }
 
 func (q *Queries) CreateBackup(ctx context.Context, arg CreateBackupParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, createBackup, arg.ID, arg.GuildID, arg.Data)
+	return q.db.ExecContext(ctx, createBackup,
+		arg.ID,
+		arg.GuildID,
+		arg.Data,
+		arg.CreatedBy,
+	)
 }
 
 const deleteBackup = `-- name: DeleteBackup :exec
@@ -35,7 +41,7 @@ func (q *Queries) DeleteBackup(ctx context.Context, id string) error {
 }
 
 const getBackup = `-- name: GetBackup :one
-SELECT id, guild_id, data, created_at, updated_at FROM backups WHERE id = ?
+SELECT id, guild_id, data, created_at, updated_at, created_by FROM backups WHERE id = ?
 `
 
 func (q *Queries) GetBackup(ctx context.Context, id string) (Backup, error) {
@@ -47,16 +53,17 @@ func (q *Queries) GetBackup(ctx context.Context, id string) (Backup, error) {
 		&i.Data,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }
 
 const listBackups = `-- name: ListBackups :many
-SELECT id, guild_id, data, created_at, updated_at FROM backups WHERE guild_id = ? ORDER BY created_at DESC
+SELECT id, guild_id, data, created_at, updated_at, created_by FROM backups WHERE created_by = ? ORDER BY created_at DESC
 `
 
-func (q *Queries) ListBackups(ctx context.Context, guildID string) ([]Backup, error) {
-	rows, err := q.db.QueryContext(ctx, listBackups, guildID)
+func (q *Queries) ListBackups(ctx context.Context, createdBy string) ([]Backup, error) {
+	rows, err := q.db.QueryContext(ctx, listBackups, createdBy)
 	if err != nil {
 		return nil, err
 	}
@@ -70,6 +77,7 @@ func (q *Queries) ListBackups(ctx context.Context, guildID string) ([]Backup, er
 			&i.Data,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CreatedBy,
 		); err != nil {
 			return nil, err
 		}

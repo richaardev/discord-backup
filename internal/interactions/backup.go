@@ -91,7 +91,8 @@ func handleCreate(q *sqlc.Queries) func(event *events.ApplicationCommandInteract
 		}
 
 		backupID := fmt.Sprintf("backup_%s", time.Now().Format("20060102_150405"))
-		view := backup.NewCreatePanel(backupID, guildID, event.Client().Rest, q)
+		userID := event.User().ID.String()
+		view := backup.NewCreatePanel(backupID, guildID, userID, event.Client().Rest, q)
 		panel := interactivity.NewPanel(
 			event.Client(), view,
 			interactivity.WithOptions(interactivity.PanelOptions{
@@ -151,15 +152,8 @@ func handleInfo(q *sqlc.Queries) func(event *events.ApplicationCommandInteractio
 
 func handleList(q *sqlc.Queries) func(event *events.ApplicationCommandInteractionCreate) error {
 	return func(event *events.ApplicationCommandInteractionCreate) error {
-		guildID := guildIDFromEvent(event)
-		if guildID == 0 {
-			return event.CreateMessage(discord.MessageCreate{
-				Content: "This command can only be used in a server.",
-				Flags:   discord.MessageFlagEphemeral,
-			})
-		}
-
-		backups, err := q.ListBackups(context.Background(), guildID.String())
+		userID := event.User().ID.String()
+		backups, err := q.ListBackups(context.Background(), userID)
 		if err != nil {
 			return event.CreateMessage(discord.MessageCreate{
 				Content: fmt.Sprintf("❌ Error listing backups: %v", err),
@@ -169,13 +163,13 @@ func handleList(q *sqlc.Queries) func(event *events.ApplicationCommandInteractio
 
 		if len(backups) == 0 {
 			return event.CreateMessage(discord.MessageCreate{
-				Content: "📭 No backups found for this server.",
+				Content: "📭 No backups found.",
 				Flags:   discord.MessageFlagEphemeral,
 			})
 		}
 
 		var content strings.Builder
-		fmt.Fprintf(&content, "**📋 Backups for this server (%d total)**\n\n", len(backups))
+		fmt.Fprintf(&content, "**📋 Backups created (%d total)**\n\n", len(backups))
 		for _, b := range backups {
 			var d backup.BackupData
 			if err := json.Unmarshal([]byte(b.Data), &d); err != nil {
