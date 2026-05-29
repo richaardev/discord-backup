@@ -3,6 +3,7 @@ package backup
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/disgoorg/disgo/discord"
@@ -16,8 +17,6 @@ type applyState int
 
 const (
 	stateConfigMain applyState = iota
-	stateSelectRoles
-	stateSelectChannels
 	stateConfirm
 	stateApplying
 	stateDone
@@ -35,40 +34,23 @@ type ApplyPanel struct {
 	restoreChannels bool
 	restoreBans     bool
 
-	protectedRoles    map[snowflake.ID]bool
-	protectedChannels map[snowflake.ID]bool
-
-	allRoles    []discord.Role
-	allChannels []discord.GuildChannel
-
-	rolePage    int
-	channelPage int
-
 	result *ApplyResult
 }
 
 func NewApplyPanel(backupID string, data *BackupData, guildID snowflake.ID, rest rest.Rest) *ApplyPanel {
 	return &ApplyPanel{
-		state:             stateConfigMain,
-		backupID:          backupID,
-		data:              data,
-		guildID:           guildID,
-		rest:              rest,
-		restoreRoles:      true,
-		restoreChannels:   true,
-		restoreBans:       true,
-		protectedRoles:    make(map[snowflake.ID]bool),
-		protectedChannels: make(map[snowflake.ID]bool),
+		state:           stateConfigMain,
+		backupID:        backupID,
+		data:            data,
+		guildID:         guildID,
+		rest:            rest,
+		restoreRoles:    true,
+		restoreChannels: true,
+		restoreBans:     true,
 	}
 }
 
-func (p *ApplyPanel) Init() {
-	roles, _ := p.rest.GetRoles(p.guildID)
-	p.allRoles = roles
-
-	channels, _ := p.rest.GetGuildChannels(p.guildID)
-	p.allChannels = channels
-}
+func (p *ApplyPanel) Init() {}
 
 func (p *ApplyPanel) Update(e any) (interactivity.PanelModel, interactivity.Cmd) {
 	switch evt := e.(type) {
@@ -84,10 +66,6 @@ func (p *ApplyPanel) handleComponent(e *events.ComponentInteractionCreate) (inte
 	switch p.state {
 	case stateConfigMain:
 		return p.handleConfigMain(customID, e)
-	case stateSelectRoles:
-		return p.handleSelectRoles(customID, e)
-	case stateSelectChannels:
-		return p.handleSelectChannels(customID, e)
 	case stateConfirm:
 		return p.handleConfirm(customID, e)
 	case stateApplying:
@@ -106,71 +84,11 @@ func (p *ApplyPanel) handleConfigMain(customID string, e *events.ComponentIntera
 		p.restoreChannels = !p.restoreChannels
 	case "toggle:bans":
 		p.restoreBans = !p.restoreBans
-	case "select:roles":
-		p.state = stateSelectRoles
-		p.rolePage = 0
-		return p, nil
-	case "select:channels":
-		p.state = stateSelectChannels
-		p.channelPage = 0
-		return p, nil
 	case "apply:start":
 		p.state = stateConfirm
 	case "cancel":
 		return nil, nil
 	}
-	return p, nil
-}
-
-func (p *ApplyPanel) handleSelectRoles(customID string, e *events.ComponentInteractionCreate) (interactivity.PanelModel, interactivity.Cmd) {
-	switch customID {
-	case "roles:back":
-		p.state = stateConfigMain
-	case "roles:prev":
-		if p.rolePage > 0 {
-			p.rolePage--
-		}
-	case "roles:next":
-		itemsPerPage := 25
-		totalRoles := len(p.allRoles)
-		if (p.rolePage+1)*itemsPerPage < totalRoles {
-			p.rolePage++
-		}
-	}
-
-	if selectData, ok := e.Data.(discord.RoleSelectMenuInteractionData); ok {
-		p.protectedRoles = make(map[snowflake.ID]bool)
-		for _, id := range selectData.Values {
-			p.protectedRoles[id] = true
-		}
-	}
-
-	return p, nil
-}
-
-func (p *ApplyPanel) handleSelectChannels(customID string, e *events.ComponentInteractionCreate) (interactivity.PanelModel, interactivity.Cmd) {
-	switch customID {
-	case "channels:back":
-		p.state = stateConfigMain
-	case "channels:prev":
-		if p.channelPage > 0 {
-			p.channelPage--
-		}
-	case "channels:next":
-		itemsPerPage := 25
-		totalChannels := len(p.allChannels)
-		if (p.channelPage+1)*itemsPerPage < totalChannels {
-			p.channelPage++
-		}
-	}
-
-	if selectData, ok := e.Data.(discord.ChannelSelectMenuInteractionData); ok {
-		p.protectedChannels = make(map[snowflake.ID]bool)
-		for _, id := range selectData.Values {
-			p.protectedChannels[id] = true
-		}
-	}
-
 	return p, nil
 }
 
@@ -189,22 +107,10 @@ func (p *ApplyPanel) handleConfirm(customID string, e *events.ComponentInteracti
 func (p *ApplyPanel) runApply() {
 	p.state = stateApplying
 
-	protectedRoleSlice := make([]snowflake.ID, 0, len(p.protectedRoles))
-	for id := range p.protectedRoles {
-		protectedRoleSlice = append(protectedRoleSlice, id)
-	}
-
-	protectedChannelSlice := make([]snowflake.ID, 0, len(p.protectedChannels))
-	for id := range p.protectedChannels {
-		protectedChannelSlice = append(protectedChannelSlice, id)
-	}
-
 	cfg := ApplyConfig{
-		RestoreRoles:      p.restoreRoles,
-		RestoreChannels:   p.restoreChannels,
-		RestoreBans:       p.restoreBans,
-		ProtectedRoles:    protectedRoleSlice,
-		ProtectedChannels: protectedChannelSlice,
+		RestoreRoles:    p.restoreRoles,
+		RestoreChannels: p.restoreChannels,
+		RestoreBans:     p.restoreBans,
 	}
 
 	p.result = Apply(p.guildID, p.data, cfg, p.rest)
@@ -219,10 +125,6 @@ func (p *ApplyPanel) View() interactivity.Message {
 	switch p.state {
 	case stateConfigMain:
 		return p.viewConfigMain()
-	case stateSelectRoles:
-		return p.viewSelectRoles()
-	case stateSelectChannels:
-		return p.viewSelectChannels()
 	case stateConfirm:
 		return p.viewConfirm()
 	case stateApplying:
@@ -259,106 +161,11 @@ func (p *ApplyPanel) viewConfigMain() interactivity.Message {
 		).WithAccentColor(0x5865F2),
 		discord.NewTextDisplay("### Toggle categories to restore"),
 		discord.NewActionRow(toggleRoles, toggleChannels, toggleBans),
-	}
-
-	if p.restoreRoles {
-		components = append(components,
-			discord.NewTextDisplay(fmt.Sprintf("**Protected roles:** %d selected", len(p.protectedRoles))),
-			discord.NewActionRow(
-				discord.NewSecondaryButton("⚙️ Select roles to protect", "select:roles"),
-			),
-		)
-	}
-
-	if p.restoreChannels {
-		components = append(components,
-			discord.NewTextDisplay(fmt.Sprintf("**Protected channels:** %d selected", len(p.protectedChannels))),
-			discord.NewActionRow(
-				discord.NewSecondaryButton("⚙️ Select channels to protect", "select:channels"),
-			),
-		)
-	}
-
-	components = append(components,
 		discord.NewActionRow(
 			discord.NewSuccessButton("▶️ Apply Backup", "apply:start"),
 			discord.NewDangerButton("❌ Cancel", "cancel"),
 		),
-	)
-
-	return interactivity.Message{
-		Components: &components,
-		Flags:      new(discord.MessageFlagIsComponentsV2),
 	}
-}
-
-func (p *ApplyPanel) viewSelectRoles() interactivity.Message {
-	itemsPerPage := 25
-	start := p.rolePage * itemsPerPage
-	end := start + itemsPerPage
-	if end > len(p.allRoles) {
-		end = len(p.allRoles)
-	}
-
-	pageRoles := p.allRoles[start:end]
-	totalPages := (len(p.allRoles) + itemsPerPage - 1) / itemsPerPage
-
-	selectMenu := discord.NewRoleSelectMenu("roles:select", "Choose roles to protect...").
-		WithMaxValues(25)
-
-	components := []discord.LayoutComponent{
-		discord.NewContainer(discord.NewTextDisplay("### 🛡️ Select Roles to Protect"), discord.NewTextDisplay(fmt.Sprintf("Page %d/%d — Select roles that should NOT be deleted.", p.rolePage+1, totalPages))).WithAccentColor(0x5865F2),
-		discord.NewTextDisplay(fmt.Sprintf("### Page %d/%d — %d roles shown", p.rolePage+1, totalPages, len(pageRoles))),
-		discord.NewActionRow(selectMenu),
-	}
-
-	var navButtons []discord.InteractiveComponent
-	if p.rolePage > 0 {
-		navButtons = append(navButtons, discord.NewSecondaryButton("◀️ Prev", "roles:prev"))
-	}
-	if end < len(p.allRoles) {
-		navButtons = append(navButtons, discord.NewSecondaryButton("Next ▶️", "roles:next"))
-	}
-	navButtons = append(navButtons, discord.NewSecondaryButton("🔙 Back", "roles:back"))
-
-	components = append(components, discord.NewActionRow(navButtons...))
-
-	return interactivity.Message{
-		Components: &components,
-		Flags:      new(discord.MessageFlagIsComponentsV2),
-	}
-}
-
-func (p *ApplyPanel) viewSelectChannels() interactivity.Message {
-	itemsPerPage := 25
-	start := p.channelPage * itemsPerPage
-	end := start + itemsPerPage
-	if end > len(p.allChannels) {
-		end = len(p.allChannels)
-	}
-
-	pageChannels := p.allChannels[start:end]
-	totalPages := (len(p.allChannels) + itemsPerPage - 1) / itemsPerPage
-
-	selectMenu := discord.NewChannelSelectMenu("channels:select", "Choose channels to protect...").
-		WithMaxValues(25)
-
-	components := []discord.LayoutComponent{
-		discord.NewContainer(discord.NewTextDisplay("### 🛡️ Select Channels to Protect"), discord.NewTextDisplay(fmt.Sprintf("Page %d/%d — Select channels that should NOT be deleted.", p.channelPage+1, totalPages))).WithAccentColor(0x5865F2),
-		discord.NewTextDisplay(fmt.Sprintf("### Page %d/%d — %d channels shown", p.channelPage+1, totalPages, len(pageChannels))),
-		discord.NewActionRow(selectMenu),
-	}
-
-	var navButtons []discord.InteractiveComponent
-	if p.channelPage > 0 {
-		navButtons = append(navButtons, discord.NewSecondaryButton("◀️ Prev", "channels:prev"))
-	}
-	if end < len(p.allChannels) {
-		navButtons = append(navButtons, discord.NewSecondaryButton("Next ▶️", "channels:next"))
-	}
-	navButtons = append(navButtons, discord.NewSecondaryButton("🔙 Back", "channels:back"))
-
-	components = append(components, discord.NewActionRow(navButtons...))
 
 	return interactivity.Message{
 		Components: &components,
@@ -371,12 +178,12 @@ func (p *ApplyPanel) viewConfirm() interactivity.Message {
 	summary += fmt.Sprintf("**📋 Apply Summary**\n\n**Backup:** `%s`\n\n**Will restore:**\n", p.backupID)
 
 	if p.restoreRoles {
-		summary += fmt.Sprintf("✅ **Roles** (%d roles, %d protected)\n", len(p.data.Roles), len(p.protectedRoles))
+		summary += fmt.Sprintf("✅ **Roles** (%d roles)\n", len(p.data.Roles))
 	} else {
 		summary += "❌ Roles (skipped)\n"
 	}
 	if p.restoreChannels {
-		summary += fmt.Sprintf("✅ **Channels** (%d channels, %d protected)\n", len(p.data.Channels), len(p.protectedChannels))
+		summary += fmt.Sprintf("✅ **Channels** (%d channels)\n", len(p.data.Channels))
 	} else {
 		summary += "❌ Channels (skipped)\n"
 	}
@@ -434,26 +241,27 @@ func (p *ApplyPanel) viewDone() interactivity.Message {
 		return p.viewDoneError()
 	}
 
-	summary := fmt.Sprintf("**✅ Backup Applied Successfully!**\n\n**Backup:** `%s`\n\n", p.backupID)
+	var summary strings.Builder
+	fmt.Fprintf(&summary, "**✅ Backup Applied Successfully!**\n\n**Backup:** `%s`\n\n", p.backupID)
 
 	if p.restoreRoles {
-		summary += fmt.Sprintf("✅ %d roles created\n", p.result.RolesCreated)
+		fmt.Fprintf(&summary, "✅ %d roles created\n", p.result.RolesCreated)
 	}
 	if p.restoreChannels {
-		summary += fmt.Sprintf("✅ %d channels created\n", p.result.ChannelsCreated)
+		fmt.Fprintf(&summary, "✅ %d channels created\n", p.result.ChannelsCreated)
 	}
 	if p.restoreBans {
-		summary += fmt.Sprintf("✅ %d bans applied\n", p.result.BansApplied)
+		fmt.Fprintf(&summary, "✅ %d bans applied\n", p.result.BansApplied)
 	}
 
 	if len(p.result.Errors) > 0 {
-		summary += fmt.Sprintf("\n**⚠️ %d errors:**\n", len(p.result.Errors))
+		fmt.Fprintf(&summary, "\n**⚠️ %d errors:**\n", len(p.result.Errors))
 		for i, err := range p.result.Errors {
 			if i >= 5 {
-				summary += fmt.Sprintf("... and %d more", len(p.result.Errors)-5)
+				fmt.Fprintf(&summary, "... and %d more", len(p.result.Errors)-5)
 				break
 			}
-			summary += fmt.Sprintf("• %s\n", err)
+			fmt.Fprintf(&summary, "• %s\n", err)
 		}
 	}
 
@@ -461,7 +269,7 @@ func (p *ApplyPanel) viewDone() interactivity.Message {
 		Components: &[]discord.LayoutComponent{
 			discord.NewContainer(
 				discord.NewTextDisplay("### ✅ Apply Complete"),
-				discord.NewTextDisplay(summary),
+				discord.NewTextDisplay(summary.String()),
 			).WithAccentColor(0x57F287),
 			discord.NewTextDisplay("*This panel will close automatically...*"),
 		},
