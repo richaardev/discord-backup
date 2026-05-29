@@ -43,6 +43,24 @@ func Apply(guildID snowflake.ID, data *BackupData, cfg ApplyConfig, restClient r
 		protectedChannelIDs[id] = true
 	}
 
+	existingByID := make(map[snowflake.ID]discord.GuildChannel, len(existingChannels))
+	for _, ch := range existingChannels {
+		existingByID[ch.ID()] = ch
+	}
+
+	protectedCategoryIDs := make(map[snowflake.ID]bool)
+	for _, id := range cfg.ProtectedChannels {
+		if ch, ok := existingByID[id]; ok && ch.Type() == discord.ChannelTypeGuildCategory {
+			protectedCategoryIDs[id] = true
+		}
+	}
+
+	for _, ch := range existingChannels {
+		if parentID := ch.ParentID(); parentID != nil && protectedCategoryIDs[*parentID] {
+			protectedChannelIDs[ch.ID()] = true
+		}
+	}
+
 	existingRoleByName := make(map[string]discord.Role)
 	for _, role := range existingRoles {
 		existingRoleByName[role.Name] = role
